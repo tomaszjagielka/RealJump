@@ -62,11 +62,7 @@ public:
         delete[] sprites;
     }
 
-    virtual void Update(Dimension windowSize, std::list<Entity*> objects) = 0;
-};
-
-struct GameState {
-
+    //virtual void Update(Dimension windowSize, std::list<Entity*> objects) = 0;
 };
 
 class Object : public Entity {
@@ -74,24 +70,46 @@ public:
     Object(MySprite** sprites, int numSprites, Dimension position)
         : Entity(sprites, numSprites, position) {}
 
-    void Update(Dimension windowSize, std::list<Entity*> objects) override {
+    void Update(Dimension windowSize, std::list<Entity*> objects) {
 
     }
 };
 
 class Player : public Entity {
-    bool isJumping = true;
-    Direction lastMoveDirection = Direction::RIGHT;
+    bool onPlatform = false;
+
+    void Jump() {
+        isJumping = true;
+        velocity = -3;
+    }
 
 public:
-    float velocity = 0;
+    bool isJumping = true;
+    Direction lastMoveDirection = Direction::RIGHT;
     Direction moveDirection = Direction::NONE;
+    float velocity = 0;
     bool maxHeightCapped = false;
+    int lifes = 5;
+    bool gameOver = false;
+    int distance = 0;
+    int platfromCount = 0;
 
     Player(MySprite** sprites, int numSprites, Dimension position)
         : Entity(sprites, numSprites, position) {}
 
-    void Update(Dimension windowSize, std::list<Entity*> objects) override {
+    bool collidesWithPlatform(const Entity* platform) {
+        if (position.y + sprites[0]->size.y > platform->position.y && // Player's feet are below the top of the platform.
+            position.y < platform->position.y && // Player's head is above the platform.
+            position.x + sprites[0]->size.x > platform->position.x && // Player is to the right of the platform.
+            position.x < platform->position.x + platform->sprites[0]->size.x) // Player is to the left of the platform.
+        {
+            return true;
+        }
+        return false;
+    }
+
+    void Update(Dimension windowSize, std::list<Entity*>& objects) {
+        // FLAGS
         const float gravity = 0.0125;
         float lastYPosition = position.y;
 
@@ -104,22 +122,54 @@ public:
         }
         else maxHeightCapped = false;
 
-        bool isFalling = lastYPosition < position.y;
+        // HANDLE LIFES
+        if (lifes > 0 && position.y > windowSize.y - this->sprites[0]->size.y / 2) {
+            Dimension lowestPlatform = Dimension(0, 0);
 
-        for (Entity* object : objects) {
-            // Check for collision between player's feet and object.
-            if (isFalling && // Check if player is falling
-                position.y + sprites[0]->size.y > object->position.y && // Player's feet are below the top of the object.
-                position.y < object->position.y && // Player's head is above the object.
-                position.x + sprites[0]->size.x > object->position.x && // Player is to the right of the object.
-                position.x < object->position.x + object->sprites[0]->size.x) // Player is to the left of the object.
-            {
-                velocity = 0;
-                isJumping = false;
+            for (Entity* object : objects) {
+                if (object->position.y > lowestPlatform.y) {
+                    lowestPlatform = object->position;
+                }
             }
 
+            position.x = lowestPlatform.x + this->sprites[0]->size.x / 4;
+            position.y = lowestPlatform.y - this->sprites[0]->size.y;
+            lifes--;
         }
 
+        gameOver = (lifes < 1);
+
+        bool isFalling = lastYPosition < position.y;
+
+        int yPositionDelta = position.y - lastYPosition;
+        if (yPositionDelta > 0)
+            distance += yPositionDelta;
+
+        // COLLISIONS
+        bool collidedWithPlatform = false;
+        if (isFalling) {
+            for (const auto& object : objects) {
+                if (collidesWithPlatform(object) && isFalling) {
+                    velocity = 0;
+                    position.y -= 0.25;
+
+                    if (!onPlatform) {
+                        platfromCount++;
+                        onPlatform = true;
+                    }
+
+                    collidedWithPlatform = true;
+
+                    Jump();
+                }
+            }
+        }
+
+        if (!collidedWithPlatform) {
+            onPlatform = false;
+        }
+
+        // MOVEMENT
         switch (moveDirection) {
         case Direction::RIGHT:
             position.x += 1;
@@ -148,34 +198,34 @@ public:
             }
             break;
         }
-
-        if (isJumping) {
-            position.y -= 0.25;
-        }
-        else {
-            Jump();
-        }
     }
 
-    void Jump() {
-        isJumping = true;
-        velocity = -3;
+    void Reset() {
+        this->position = position;
+        this->velocity = 0;
+        this->isJumping = true;
+        this->moveDirection = Direction::NONE;
+        this->lastMoveDirection = Direction::RIGHT;
+        this->maxHeightCapped = false;
+        this->lifes = 5;
+        this->gameOver = false;
+        this->distance = 0;
+        this->platfromCount = 0;
     }
 };
 
-//
-//class Enemy : public Entity {
-//    Direction lastUsedDirection = Direction::RIGHT;
-//
-//public:
-//    Enemy(MySprite** sprites, int numSprites, Dimension position)
-//        : Entity(sprites, numSprites, position) {}
-//
-//    void Update(Dimension windowSize, std::list<Entity*> objects) override {
-//        position.x += 1;
-//        Draw(sprites[0]);
-//    }
-//};
+class Enemy : public Entity {
+    Direction lastUsedDirection = Direction::RIGHT;
+
+public:
+    Enemy(MySprite** sprites, int numSprites, Dimension position)
+        : Entity(sprites, numSprites, position) {}
+
+    void Update(Dimension windowSize) {
+        position.x += 1;
+        Draw(sprites[0]);
+    }
+};
 
 class MyFramework : public Framework {
     Dimension windowSize;
@@ -190,16 +240,37 @@ class MyFramework : public Framework {
         fullscreen = false;
     }
 
+    void InitPlatforms() {
+        objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")},
+            1,
+            Dimension(player->position.x - player->sprites[0]->size.x / 4, player->position.y + player->sprites[0]->size.y)));
+
+        while (objects.size() < 10) {
+            int maxX = windowSize.x - objects.front()->sprites[0]->size.x;
+            int minX = 0;
+            int randomX = rand() % (maxX - minX + 1) + minX;
+
+            int maxY = windowSize.y;
+            int minY = 0;
+            int randomY = rand() % (maxY - minY + 1) + minY;
+
+            randomY = std::max(randomY, -500);
+            randomX = std::min(randomX, int(windowSize.x));
+
+            Dimension randomDimension(randomX, randomY);
+            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")}, 1, randomDimension));
+        }
+    }
+
+
     // return : true - ok, false - failed, application will exit
     bool Init() {
         backgroundSprite = new MySprite("data/bck@2x.png");
-        player = new Player(new MySprite * [2] {new MySprite("data/lik-right-clipped@2x.png"), new MySprite("data/lik-left-clipped@2x.png")}, 2, Dimension(0, 500));
-
-        int yPosition = 0;
-        while (objects.size() < 10) {
-            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")}, 1, Dimension(0, yPosition)));
-            yPosition += 300;
-        }
+        player = new Player(
+            new MySprite * [2] {new MySprite("data/lik-right-clipped@2x.png"), new MySprite("data/lik-left-clipped@2x.png")},
+            2,
+            Dimension(windowSize.x / 2, windowSize.y / 2));
+        InitPlatforms();
 
         return true;
     }
@@ -240,7 +311,7 @@ class MyFramework : public Framework {
         player->Update(windowSize, objects);
 
         if (!objectExists) {
-            int maxX = windowSize.x;
+            int maxX = windowSize.x - objects.front()->sprites[0]->size.x;
             int minX = 0;
             int randomX = rand() % (maxX - minX + 1) + minX;
 
@@ -252,11 +323,25 @@ class MyFramework : public Framework {
             randomX = std::min(randomX, int(windowSize.x));
 
             Dimension randomDimension(randomX, randomY);
-            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")}, 1, randomDimension));
+            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")},
+                1,
+                randomDimension));
+        }
+
+        if (player->gameOver) {
+            std::cout << "Distance: " << player->distance << std::endl;
+            std::cout << "Platform count: " << player->platfromCount << std::endl;
+            player->Reset();
+            for (auto& object : objects) {
+                delete object;
+            }
+            objects.clear();
+            InitPlatforms();
         }
 
         return false;
     }
+
 
     // param: xrel, yrel: The relative motion in the X/Y direction 
     // param: x, y : coordinate, relative to window
