@@ -122,6 +122,8 @@ class Player : public Entity {
             break;
         }
 
+        // TODO:
+        // Check if it takes effect.
         isFalling = false;
     }
 
@@ -191,6 +193,7 @@ public:
     int distance = 0;
     int platfromCount = 0;
     bool lastFalling = false;
+    int jumpingTicks = 0;
 
     Player(MySprite** sprites, int numSprites, Dimension position)
         : Entity(sprites, numSprites, position) {}
@@ -295,6 +298,8 @@ public:
                     // Delete the Jetpack object properly.
                     if (obj->objectType == ObjectType::JETPACK)
                         obj->sprites[0] = new MySprite("data/transparent.png");
+
+                    jumpingTicks = 150;
                 }
             }
         }
@@ -308,30 +313,58 @@ public:
         case Direction::RIGHT:
             position.x += 1;
             lastMoveDirection = Direction::RIGHT;
-            Draw(sprites[0]);
-            if (position.x > windowSize.x) {
-                position.x = -sprites[0]->size.x;
+            if (jumpingTicks > 0) {
+                Draw(sprites[2]);
+                if (position.x > windowSize.x) {
+                    position.x = -sprites[2]->size.x;
+                }
+            }
+            else {
+                Draw(sprites[0]);
+                if (position.x > windowSize.x) {
+                    position.x = -sprites[0]->size.x;
+                }
             }
             break;
         case Direction::LEFT:
-            position.x -= 1;
-            lastMoveDirection = Direction::LEFT;
-            Draw(sprites[1]);
-            if (position.x < -sprites[1]->size.x) {
-                position.x = windowSize.x;
+            if (jumpingTicks > 0) {
+                position.x -= 1;
+                lastMoveDirection = Direction::LEFT;
+                Draw(sprites[3]);
+                if (position.x < -sprites[3]->size.x) {
+                    position.x = windowSize.x;
+                }
+            }
+            else {
+                position.x -= 1;
+                lastMoveDirection = Direction::LEFT;
+                Draw(sprites[1]);
+                if (position.x < -sprites[1]->size.x) {
+                    position.x = windowSize.x;
+                }
             }
             break;
         case Direction::NONE:
             switch (lastMoveDirection) {
             case Direction::LEFT:
-                Draw(sprites[1]);
+                if (jumpingTicks > 0)
+                    Draw(sprites[3]);
+                else
+                    Draw(sprites[1]);
+
                 break;
             case Direction::RIGHT:
-                Draw(sprites[0]);
+                if (jumpingTicks > 0)
+                    Draw(sprites[2]);
+                else
+                    Draw(sprites[0]);
                 break;
             }
             break;
         }
+
+        if (jumpingTicks > 0)
+            jumpingTicks--;
     }
 
     void Reset() {
@@ -472,12 +505,18 @@ class MyFramework : public Framework {
     // return : true - ok, false - failed, application will exit
     bool Init() {
         srand(time(0));
+
         backgroundSprite = new MySprite("data/bck@2x.png");
         player = new Player(
-            new MySprite * [2] {new MySprite("data/lik-right-clipped@2x.png"), new MySprite("data/lik-left-clipped@2x.png")},
-            2,
+            new MySprite * [4] {new MySprite("data/lik-right-clipped@2x.png"),
+            new MySprite("data/lik-left-clipped@2x.png"),
+            new MySprite("data/lik-right-odskok-clipped@2x.png"),
+            new MySprite("data/lik-left-odskok-clipped@2x.png")},
+            3,
             Dimension(windowSize.x / 2, windowSize.y / 2));
+
         std::cout << "Lives left: " << player->lives << std::endl;
+
         InitPlatforms();
 
         return true;
@@ -577,7 +616,7 @@ class MyFramework : public Framework {
             if (rand() % 100 < 10) {
                 enemies.push_back(new Enemy(new MySprite * [1] {new MySprite("data/enemy0-clipped@2x.png")}, 1, Dimension(randomDimension.x - 30, randomDimension.y - 60)));
             }
-            else if (rand() % 100 < 2) {
+            else if (rand() % 100 < 1) {
                 objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-jetpack-clipped@2x.png")}, 1, Dimension(randomDimension.x + 35, randomDimension.y - 70), ObjectType::JETPACK));
             }
         }
