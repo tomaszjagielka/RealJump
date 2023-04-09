@@ -1,11 +1,14 @@
+#include <list>
+#include <iostream>
+
 #include "Framework.h"
 
 struct Dimension {
-    int x;
-    int y;
+    float x;
+    float y;
 
     Dimension() : x(0), y(0) {}
-    Dimension(int w, int h) : x(w), y(h) {}
+    Dimension(float x, float y) : x(x), y(y) {}
 };
 
 class MySprite {
@@ -15,7 +18,9 @@ public:
 
     MySprite(const char* path) {
         sprite = createSprite(path);
-        getSpriteSize(sprite, size.x, size.y);
+        int w, h;
+        getSpriteSize(sprite, w, h);
+        size = Dimension(w, h);
     }
 
     void Draw(int x, int y) {
@@ -37,18 +42,18 @@ enum class Direction {
 
 class Entity {
 protected:
-    MySprite** sprites;
     int numSprites;
-    Dimension position;
-    Dimension windowSize;
 
     void Draw(MySprite* sprite) {
         sprite->Draw(position.x, position.y);
     }
 
 public:
-    Entity(MySprite** sprites, int numSprites, Dimension position, Dimension windowSize)
-        : sprites(sprites), numSprites(numSprites), position(position), windowSize(windowSize) {}
+    MySprite** sprites;
+    Dimension position;
+
+    Entity(MySprite** sprites, int numSprites, Dimension position)
+        : sprites(sprites), numSprites(numSprites), position(position) {}
 
     ~Entity() {
         for (int i = 0; i < numSprites; i++) {
@@ -57,37 +62,68 @@ public:
         delete[] sprites;
     }
 
-    virtual void Update() = 0;
+    virtual void Update(Dimension windowSize, std::list<Entity*> objects) = 0;
+};
 
-    Direction moveDirection = Direction::NONE;
+struct GameState {
+
+};
+
+class Object : public Entity {
+public:
+    Object(MySprite** sprites, int numSprites, Dimension position)
+        : Entity(sprites, numSprites, position) {}
+
+    void Update(Dimension windowSize, std::list<Entity*> objects) override {
+
+    }
 };
 
 class Player : public Entity {
-    Direction lastUsedDirection = Direction::RIGHT;
-    float velocity = 0;
     bool isJumping = true;
-    int jumpStartTime = 0;
+    Direction lastMoveDirection = Direction::RIGHT;
 
 public:
-    Player(MySprite** sprites, int numSprites, Dimension position, Dimension windowSize)
-        : Entity(sprites, numSprites, position, windowSize) {}
+    float velocity = 0;
+    Direction moveDirection = Direction::NONE;
+    bool maxHeightCapped = false;
 
-    void Update() override {
+    Player(MySprite** sprites, int numSprites, Dimension position)
+        : Entity(sprites, numSprites, position) {}
+
+    void Update(Dimension windowSize, std::list<Entity*> objects) override {
         const float gravity = 0.0125;
-        velocity += gravity;
+        float lastYPosition = position.y;
 
+        velocity += gravity;
         position.y += velocity;
 
-        if (position.y + sprites[0]->size.y > windowSize.y) {
-            position.y = windowSize.y - sprites[0]->size.y;
-            velocity = 0;
-            isJumping = false;
+        if (position.y < windowSize.y / 2 - this->sprites[0]->size.y / 2) {
+            position.y = windowSize.y / 2 - this->sprites[0]->size.y / 2;
+            maxHeightCapped = true;
+        }
+        else maxHeightCapped = false;
+
+        bool isFalling = lastYPosition < position.y;
+
+        for (Entity* object : objects) {
+            // Check for collision between player's feet and object.
+            if (isFalling && // Check if player is falling
+                position.y + sprites[0]->size.y > object->position.y && // Player's feet are below the top of the object.
+                position.y < object->position.y && // Player's head is above the object.
+                position.x + sprites[0]->size.x > object->position.x && // Player is to the right of the object.
+                position.x < object->position.x + object->sprites[0]->size.x) // Player is to the left of the object.
+            {
+                velocity = 0;
+                isJumping = false;
+            }
+
         }
 
         switch (moveDirection) {
         case Direction::RIGHT:
             position.x += 1;
-            lastUsedDirection = Direction::RIGHT;
+            lastMoveDirection = Direction::RIGHT;
             Draw(sprites[0]);
             if (position.x > windowSize.x) {
                 position.x = -sprites[0]->size.x;
@@ -95,14 +131,14 @@ public:
             break;
         case Direction::LEFT:
             position.x -= 1;
-            lastUsedDirection = Direction::LEFT;
+            lastMoveDirection = Direction::LEFT;
             Draw(sprites[1]);
             if (position.x < -sprites[1]->size.x) {
                 position.x = windowSize.x;
             }
             break;
         case Direction::NONE:
-            switch (lastUsedDirection) {
+            switch (lastMoveDirection) {
             case Direction::LEFT:
                 Draw(sprites[1]);
                 break;
@@ -122,31 +158,30 @@ public:
     }
 
     void Jump() {
-        // Start the jump
         isJumping = true;
-        jumpStartTime = getTickCount();
-        velocity = -1.5;
+        velocity = -3;
     }
 };
 
-class Enemy : public Entity {
-    Direction lastUsedDirection = Direction::RIGHT;
-
-public:
-    Enemy(MySprite** sprites, int numSprites, Dimension position, Dimension windowSize)
-        : Entity(sprites, numSprites, position, windowSize) {}
-
-    void Update() override {
-        position.x += 1;
-        Draw(sprites[0]);
-    }
-};
-
+//
+//class Enemy : public Entity {
+//    Direction lastUsedDirection = Direction::RIGHT;
+//
+//public:
+//    Enemy(MySprite** sprites, int numSprites, Dimension position)
+//        : Entity(sprites, numSprites, position) {}
+//
+//    void Update(Dimension windowSize, std::list<Entity*> objects) override {
+//        position.x += 1;
+//        Draw(sprites[0]);
+//    }
+//};
 
 class MyFramework : public Framework {
     Dimension windowSize;
     MySprite* backgroundSprite;
     Player* player;
+    std::list<Entity*> objects;
 
     void PreInit(int& width, int& height, bool& fullscreen) override
     {
@@ -158,8 +193,14 @@ class MyFramework : public Framework {
     // return : true - ok, false - failed, application will exit
     bool Init() {
         backgroundSprite = new MySprite("data/bck@2x.png");
-        MySprite** playerSprites = new MySprite * [2];
-        player = new Player(new MySprite * [2] {new MySprite("data/lik-right@2x.png"), new MySprite("data/lik-left@2x.png")}, 2, Dimension(10, 10), windowSize);
+        player = new Player(new MySprite * [2] {new MySprite("data/lik-right-clipped@2x.png"), new MySprite("data/lik-left-clipped@2x.png")}, 2, Dimension(0, 500));
+
+        int yPosition = 0;
+        while (objects.size() < 10) {
+            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")}, 1, Dimension(0, yPosition)));
+            yPosition += 300;
+        }
+
         return true;
     }
 
@@ -174,7 +215,45 @@ class MyFramework : public Framework {
             backgroundSprite->Draw(width, 0);
         }
 
-        player->Update();
+        bool objectExists = false;
+        for (auto it = objects.begin(); it != objects.end(); ) {
+            Entity* object = *it;
+
+            if (object->position.y < 0) {
+                objectExists = true;
+            }
+
+            if (player->velocity < 0 && player->maxHeightCapped) {
+                object->position.y -= player->velocity;
+            }
+
+            if (object->position.y > windowSize.y) {
+                delete object;
+                it = objects.erase(it);
+            }
+            else {
+                object->sprites[0]->Draw(object->position.x, object->position.y);
+                ++it;
+            }
+        }
+
+        player->Update(windowSize, objects);
+
+        if (!objectExists) {
+            int maxX = windowSize.x;
+            int minX = 0;
+            int randomX = rand() % (maxX - minX + 1) + minX;
+
+            int maxY = 0;
+            int minY = -300;
+            int randomY = rand() % (maxY - minY + 1) + minY;
+
+            randomY = std::max(randomY, -500);
+            randomX = std::min(randomX, int(windowSize.x));
+
+            Dimension randomDimension(randomX, randomY);
+            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform@2x.png")}, 1, randomDimension));
+        }
 
         return false;
     }
@@ -206,7 +285,7 @@ class MyFramework : public Framework {
     }
 
 public:
-    MyFramework() : windowSize(800, 600) {}
+    MyFramework() : windowSize(800, 1000) {}
 };
 
 int main(int argc, char *argv[])
