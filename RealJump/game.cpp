@@ -194,6 +194,7 @@ public:
     int platfromCount = 0;
     bool lastFalling = false;
     int jumpingTicks = 0;
+    int shootingTicks = 0;
 
     Player(MySprite** sprites, int numSprites, Dimension position)
         : Entity(sprites, numSprites, position) {}
@@ -308,53 +309,68 @@ public:
             onPlatform = false;
         }
 
-        // MOVEMENT
+        // MOVEMENT & SPRITES
+        if (shootingTicks && jumpingTicks) {
+            Draw(sprites[6]);
+        }
+        else if (shootingTicks) {
+            Draw(sprites[5]);
+        }
+
         switch (moveDirection) {
         case Direction::RIGHT:
             position.x += 1;
-            lastMoveDirection = Direction::RIGHT;
-            if (jumpingTicks > 0) {
+            lastMoveDirection = moveDirection;
+
+            if (position.x > windowSize.x) {
+                position.x = -sprites[0]->size.x;
+            }
+
+            if (jumpingTicks && shootingTicks)
+                Draw(sprites[6]);
+            else if (shootingTicks)
+                Draw(sprites[5]);
+            else if (jumpingTicks)
                 Draw(sprites[2]);
-                if (position.x > windowSize.x) {
-                    position.x = -sprites[2]->size.x;
-                }
-            }
-            else {
+            else
                 Draw(sprites[0]);
-                if (position.x > windowSize.x) {
-                    position.x = -sprites[0]->size.x;
-                }
-            }
             break;
         case Direction::LEFT:
-            if (jumpingTicks > 0) {
-                position.x -= 1;
-                lastMoveDirection = Direction::LEFT;
+            position.x -= 1;
+            lastMoveDirection = moveDirection;
+
+            if (position.x < -sprites[3]->size.x) {
+                position.x = windowSize.x;
+            }
+
+            if (jumpingTicks && shootingTicks)
+                Draw(sprites[6]);
+            else if (shootingTicks)
+                Draw(sprites[5]);
+            else if (jumpingTicks)
                 Draw(sprites[3]);
-                if (position.x < -sprites[3]->size.x) {
-                    position.x = windowSize.x;
-                }
-            }
-            else {
-                position.x -= 1;
-                lastMoveDirection = Direction::LEFT;
+            else
                 Draw(sprites[1]);
-                if (position.x < -sprites[1]->size.x) {
-                    position.x = windowSize.x;
-                }
-            }
             break;
         case Direction::NONE:
             switch (lastMoveDirection) {
             case Direction::LEFT:
-                if (jumpingTicks > 0)
+                if (jumpingTicks && shootingTicks)
+                    Draw(sprites[6]);
+                else if (shootingTicks)
+                    Draw(sprites[5]);
+                else if (jumpingTicks)
                     Draw(sprites[3]);
                 else
                     Draw(sprites[1]);
 
                 break;
             case Direction::RIGHT:
-                if (jumpingTicks > 0)
+                if (jumpingTicks && shootingTicks)
+                    Draw(sprites[6]);
+                else if (shootingTicks)
+                    Draw(sprites[5]);
+                else if (jumpingTicks)
                     Draw(sprites[2]);
                 else
                     Draw(sprites[0]);
@@ -365,6 +381,8 @@ public:
 
         if (jumpingTicks > 0)
             jumpingTicks--;
+        if (shootingTicks > 0)
+            shootingTicks--;
     }
 
     void Reset() {
@@ -379,6 +397,8 @@ public:
         this->platfromCount = 0;
         this->onPlatform = false;
         this->isVulnerable = true;
+        this->jumpingTicks = 0;
+        this->shootingTicks = 0;
     }
 };
 
@@ -471,7 +491,7 @@ class MyFramework : public Framework {
     std::list<Entity*> objects;
     std::list<Enemy*> enemies;
     std::list<Projectile*> projectiles;
-    int mx, my, mxrelative, myrelative;
+    Dimension mousePosition;
 
     void PreInit(int& width, int& height, bool& fullscreen) override
     {
@@ -508,10 +528,14 @@ class MyFramework : public Framework {
 
         backgroundSprite = new MySprite("data/bck@2x.png");
         player = new Player(
-            new MySprite * [4] {new MySprite("data/lik-right-clipped@2x.png"),
+            new MySprite * [7] {new MySprite("data/lik-right-clipped@2x.png"),
             new MySprite("data/lik-left-clipped@2x.png"),
             new MySprite("data/lik-right-odskok-clipped@2x.png"),
-            new MySprite("data/lik-left-odskok-clipped@2x.png")},
+            new MySprite("data/lik-left-odskok-clipped@2x.png"),
+            new MySprite("data/lik-right-odskok-clipped@2x.png"),
+            new MySprite("data/lik-puca-clipped@2x.png"),
+            new MySprite("data/lik-puca-odskok-clipped@2x.png")
+            },
             3,
             Dimension(windowSize.x / 2, windowSize.y / 2));
 
@@ -651,10 +675,7 @@ class MyFramework : public Framework {
     // param: xrel, yrel: The relative motion in the X/Y direction 
     // param: x, y : coordinate, relative to window
     void onMouseMove(int x, int y, int xrelative, int yrelative) {
-        mx = x;
-        my = y;
-        mxrelative = xrelative;
-        yrelative = yrelative;
+        mousePosition = Dimension(x, y);
     }
 
     void onMouseButtonClick(FRMouseButton button, bool isReleased) {
@@ -662,8 +683,10 @@ class MyFramework : public Framework {
             projectiles.push_back(new Projectile(new MySprite * [1] {new MySprite("data/projectile-tiles0-clipped@2x.png")},
                 1,
                 Dimension(player->position.x + player->sprites[0]->size.x / 4, player->position.y),
-                Dimension(mx, my)));
+                mousePosition));
         }
+
+        player->shootingTicks = 150;
     }
 
     void onKeyPressed(FRKey k) {
