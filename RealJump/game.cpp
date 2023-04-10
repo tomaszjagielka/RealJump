@@ -1,6 +1,7 @@
 #include <list>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "Framework.h"
 
@@ -89,7 +90,9 @@ public:
         delete[] sprites;
     }
 
-    //virtual void Update(Dimension windowSize, std::list<Entity*> objects) = 0;
+    virtual void Update() {
+        Draw(sprites[0]);
+    }
 };
 
 enum ObjectType {
@@ -105,7 +108,7 @@ public:
     Object(MySprite** sprites, int numSprites, Dimension position, ObjectType objectType)
         : Entity(sprites, numSprites, position), objectType(objectType) {}
 
-    void Update() {
+    void Update() override {
         Draw(sprites[drawnSpriteIndex]);
     }
 };
@@ -117,9 +120,10 @@ enum Collision {
 };
 
 class Player : public Entity {
-    bool onPlatform = false;
     bool isVulnerable = true;
     bool isFalling = false;
+    int jetpackTicks = 0;
+    Entity* lastPassedPlatform = nullptr;
 
     void Jump(Object*& object) {
         switch (object->objectType) {
@@ -127,27 +131,21 @@ class Player : public Entity {
             velocity -= 3;
 			break;
         case ObjectType::JUMP_BOOST:
-            if (object->drawnSpriteIndex == 0)
-                velocity -= 3;
-            else
-                velocity -= 6;
+            //if (object->drawnSpriteIndex == 0)
+            //    velocity -= 6;
+            //else
+            //    velocity -= 3;
+            velocity -= 6;
             break;
         case ObjectType::JETPACK:
-            velocity -= 55;
+            //velocity -= 55;
+            jetpackTicks = 4500;
             break;
         }
-
-        // TODO:
-        // Check if it takes effect.
-        //isFalling = false;
     }
 
     void Jump() {
         velocity -= 3;
-
-        // TODO:
-        // Check if it takes effect.
-        //isFalling = false;
     }
 
     bool collidesWithEntity(const Entity* entity) {
@@ -214,7 +212,7 @@ public:
     int lives = 5;
     bool gameOver = false;
     int distance = 0;
-    int platfromCount = 0;
+    int platformCount = 0;
     bool lastFalling = false;
     int jumpingTicks = 0;
     int shootingTicks = 0;
@@ -227,22 +225,29 @@ public:
         const float gravity = 0.0125;
         float lastYPosition = position.y;
 
-        velocity += gravity;
-        position.y += velocity;
+        if (jetpackTicks)
+            velocity = -3;
+        else
+            velocity += gravity;
 
+        position.y += velocity;
         isFalling = velocity > 0;
 
         if (isFalling)
             isVulnerable = true;
 
         if (position.y < windowSize.y / 2 - this->sprites[0]->size.y / 2) {
+            int yPositionDelta = lastYPosition - position.y;
+            if (yPositionDelta > 0)
+                distance += yPositionDelta;
+
             position.y = windowSize.y / 2 - this->sprites[0]->size.y / 2;
             maxHeightCapped = true;
         }
         else maxHeightCapped = false;
 
         // HANDLE LIFES
-        if (lives > 0 && position.y > windowSize.y - this->sprites[0]->size.y / 2) {
+        if (lives >= 0 && position.y > windowSize.y - this->sprites[0]->size.y / 2) {
             Dimension lowestPlatform = Dimension(0, 0);
 
             for (Entity* object : objects) {
@@ -261,11 +266,7 @@ public:
             std::cout << "Lives left: " << lives << std::endl;
         }
 
-        gameOver = lives < 1;
-
-        int yPositionDelta = position.y - lastYPosition;
-        if (yPositionDelta > 0)
-            distance += yPositionDelta;
+        gameOver = lives < 0;
 
         // COLLISIONS
         bool collidedWithEnemy = false;
@@ -305,44 +306,38 @@ public:
             }
         }
 
-        bool collidedWithObject = false;
-        if (isFalling) {
-            for (const auto& object : objects) {
-                if (collidesWithEntity(object)) {
-                    velocity = 0;
-                    position.y -= 0.25;
+        for (const auto& object : objects) {
+            Object* obj = (Object*)object;
 
-                    if (!onPlatform) {
-                        platfromCount++;
-                        onPlatform = true;
-                    }
+            if (isFalling && collidesWithEntity(object)) {
+                velocity = 0;
+                position.y -= 0.25;
 
-
-                    Object* obj = (Object*)object;
-
-                    if (obj->objectType == ObjectType::JETPACK) {
-                        // TODO:
-                        // Delete the Jetpack object properly? Is it not a proper way?
-                        obj->position.y = windowSize.y + 1;
-                        isVulnerable = false;
-                    }
-                    else if (obj->objectType == ObjectType::JUMP_BOOST && obj->drawnSpriteIndex == 0) {
-                        obj->position.y += obj->sprites[0]->size.y - obj->sprites[1]->size.y;
-                        obj->drawnSpriteIndex = 1;
-                    }
-
-                    Jump(obj);
-
-                    jumpingTicks = 150;
-                    collidedWithObject = true;
-
-                    break;
+                if (obj->objectType == ObjectType::JETPACK) {
+                    // TODO:
+                    // Delete the Jetpack object properly? Is it not a proper way?
+                    obj->position.y = windowSize.y + 1;
+                    isVulnerable = false;
                 }
-            }
-        }
+                //else if (obj->objectType == ObjectType::JUMP_BOOST && obj->drawnSpriteIndex == 0) {
+                //    obj->position.y += obj->sprites[0]->size.y - obj->sprites[1]->size.y;
+                //    obj->drawnSpriteIndex = 1;
+                //}
 
-        if (!collidedWithObject && !collidedWithEnemy) {
-            onPlatform = false;
+                Jump(obj);
+
+                jumpingTicks = 150;
+
+                break;
+            }
+
+            if ((maxHeightCapped &&
+                object->position.y > position.y + sprites[0]->size.y &&
+                (obj->objectType == ObjectType::JUMP || obj->objectType == JUMP_BOOST)) &&
+                (!lastPassedPlatform || object->position.y < lastPassedPlatform->position.y)) {
+                platformCount++;
+                lastPassedPlatform = object;
+            }
         }
 
         // MOVEMENT & SPRITES
@@ -419,6 +414,8 @@ public:
             jumpingTicks--;
         if (shootingTicks > 0)
             shootingTicks--;
+        if (jetpackTicks > 0)
+            jetpackTicks--;
     }
 
     void Reset() {
@@ -430,25 +427,24 @@ public:
         this->lives = 5;
         this->gameOver = false;
         this->distance = 0;
-        this->platfromCount = 0;
-        this->onPlatform = false;
+        this->platformCount = 0;
         this->isVulnerable = true;
         this->jumpingTicks = 0;
         this->shootingTicks = 0;
     }
 };
 
-class Enemy : public Entity {
-    Direction lastUsedDirection = Direction::RIGHT;
-
-public:
-    Enemy(MySprite** sprites, int numSprites, Dimension position)
-        : Entity(sprites, numSprites, position) {}
-
-    void Update(Dimension windowSize) {
-        Draw(sprites[0]);
-    }
-};
+//class Enemy : public Entity {
+//    Direction lastUsedDirection = Direction::RIGHT;
+//
+//public:
+//    Enemy(MySprite** sprites, int numSprites, Dimension position)
+//        : Entity(sprites, numSprites, position) {}
+//
+//    void Update() {
+//        Draw(sprites[0]);
+//    }
+//};
 
 class Projectile : public Entity {
     Direction lastUsedDirection = Direction::RIGHT;
@@ -521,13 +517,28 @@ public:
     }
 };
 
+//enum HudType {
+//    LIVES
+//};
+//class HudElement : public Entity {
+//    HudType hudType;
+//
+//
+//    HudElement(MySprite** sprites, int numSprites, Dimension position, HudType hudType) :
+//        Entity(sprites, numSprites, position, hudType) {}
+//};
+
+
 class MyFramework : public Framework {
     Dimension windowSize;
     MySprite* backgroundSprite;
+    MySprite* liveSprite;
     Player* player;
+    std::unordered_map<char, MySprite*> charMap;
     std::list<Entity*> objects;
-    std::list<Enemy*> enemies;
+    std::list<Entity*> enemies;
     std::list<Projectile*> projectiles;
+    std::list<Entity*> hudElements;
     Dimension mousePosition;
 
     void PreInit(int& width, int& height, bool& fullscreen) override
@@ -564,6 +575,7 @@ class MyFramework : public Framework {
         srand(time(0));
 
         backgroundSprite = new MySprite("data/bck@2x.png");
+        liveSprite = new MySprite("data/lik-left.png");
         player = new Player(
             new MySprite * [7] {new MySprite("data/lik-right-clipped@2x.png"),
             new MySprite("data/lik-left-clipped@2x.png"),
@@ -575,7 +587,23 @@ class MyFramework : public Framework {
             },
             3,
             Dimension(windowSize.x / 2, windowSize.y / 2));
-
+        charMap = {
+            {'0', new MySprite("data/char-set/0.png")},
+            {'1', new MySprite("data/char-set/1.png")},
+            {'2', new MySprite("data/char-set/2.png")},
+            {'3', new MySprite("data/char-set/3.png")},
+            {'4', new MySprite("data/char-set/4.png")},
+            {'5', new MySprite("data/char-set/5.png")},
+            {'6', new MySprite("data/char-set/6.png")},
+            {'7', new MySprite("data/char-set/7.png")},
+            {'8', new MySprite("data/char-set/8.png")},
+            {'9', new MySprite("data/char-set/9.png")},
+            {'s', new MySprite("data/char-set/s.png")},
+            {'c', new MySprite("data/char-set/c.png")},
+            {'o', new MySprite("data/char-set/o.png")},
+            {'r', new MySprite("data/char-set/r.png")},
+            {'e', new MySprite("data/char-set/e.png")},
+        };
         std::cout << "Lives left: " << player->lives << std::endl;
 
         InitPlatforms();
@@ -583,9 +611,32 @@ class MyFramework : public Framework {
         return true;
     }
 
+    void CleanUp() {
+        for (auto& object : objects) {
+            delete object;
+        }
+        for (auto& enemy : enemies) {
+            delete enemy;
+        }
+        for (auto& projectile : projectiles) {
+            delete projectile;
+        }
+        for (auto& hudElement : hudElements) {
+            delete hudElement;
+        }
+
+        objects.clear();
+        enemies.clear();
+        projectiles.clear();
+        hudElements.clear();
+    }
+
     void Close() {
         delete backgroundSprite;
+        delete liveSprite;
         delete player;
+
+        CleanUp();
     }
 
     // return value: if true will exit the application
@@ -619,7 +670,7 @@ class MyFramework : public Framework {
         }
 
         for (auto it = enemies.begin(); it != enemies.end(); ) {
-            Enemy* enemy = *it;
+            Entity* enemy = *it;
 
             if (player->velocity < 0 && player->maxHeightCapped) {
                 enemy->position.y -= player->velocity;
@@ -630,7 +681,7 @@ class MyFramework : public Framework {
                 it = enemies.erase(it);
             }
             else {
-                enemy->Update(windowSize);
+                enemy->Update();
                 ++it;
             }
         }
@@ -654,12 +705,58 @@ class MyFramework : public Framework {
 
         player->Update(windowSize, objects, reinterpret_cast<std::list<Entity*>&>(enemies));
 
+        for (int i = player->lives; i >= 0; i--) {
+            liveSprite->Draw(windowSize.x - 60 * i, 0);
+        }
+
+        //int distanceDigitCount = 0;
+        //int playerDistance = player->distance;
+        //while (playerDistance != 0) {
+        //    playerDistance /= 10;
+        //    distanceDigitCount++;
+        //}
+
+        //for (int i = 1, charPosCount = 0; i <= player->distance; i *= 10, charPosCount++) {
+        //    char digit = (player->distance / i) / i;
+        //    std::cout << digit << std::endl;
+        //    //charMap[digit]->Draw(charPosCount * 32 + 4, 0);
+        //}
+
+        int playerDistance = player->distance;
+        int platformCount = player->platformCount;
+
+        // Draw player distance
+        int numDigits = 1;
+        int digitPosition = 0;
+        while (playerDistance >= numDigits * 10) {
+            numDigits *= 10;
+        }
+        while (numDigits > 0) {
+            int digit = playerDistance / numDigits;
+            playerDistance %= numDigits;
+            charMap[digit + '0']->Draw((digitPosition++) * 32 + 4, 4);
+            numDigits /= 10;
+        }
+
+        // Draw platform count
+        numDigits = 1;
+        digitPosition = 0;
+        while (platformCount >= numDigits * 10) {
+            numDigits *= 10;
+        }
+        while (numDigits > 0) {
+            int digit = platformCount / numDigits;
+            platformCount %= numDigits;
+            charMap[digit + '0']->Draw((digitPosition++) * 32 + 4, 36);
+            numDigits /= 10;
+        }
+
         if (!objectExists) {
             int maxX = windowSize.x - objects.front()->sprites[0]->size.x;
             int minX = 0;
             int randomX = rand() % (maxX - minX + 1) + minX;
 
-            int maxY = 0;
+            int maxY = -300;
             int minY = -300;
             int randomY = rand() % (maxY - minY + 1) + minY;
 
@@ -667,7 +764,10 @@ class MyFramework : public Framework {
             randomX = std::min(randomX, int(windowSize.x));
             Dimension randomDimension(randomX, randomY);
 
-            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
+            if (rand() % 100 < 15)
+                objects.push_back(new Object(new MySprite* [1] {new MySprite("data/game-tiles-blue-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP_BOOST));
+            else
+                objects.push_back(new Object(new MySprite* [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
 
             int platformWidth = objects.back()->sprites[0]->size.x;
             int platformCenterX = randomX + platformWidth / 2;
@@ -688,24 +788,24 @@ class MyFramework : public Framework {
                 Dimension enemyDimension(enemyX, enemyY);
 
                 MySprite** spriteArray = new MySprite * [1] { enemySprite };
-                Enemy* newEnemy = new Enemy(spriteArray, 1, enemyDimension);
+                Entity* newEnemy = new Entity(spriteArray, 1, enemyDimension);
 
                 enemies.push_back(newEnemy);
             }
-            else if (rand() % 100 < 10) {
-                MySprite* untensionedSpringSprite = new MySprite("data/game-tiles-untensioned-spring-clipped@2x.png");
-                MySprite* tensionedSpringSprite = new MySprite("data/game-tiles-tensioned-spring-clipped@2x.png");
+            //else if (rand() % 100 < 10) {
+            //    MySprite* untensionedSpringSprite = new MySprite("data/game-tiles-tensioned-spring-clipped@2x.png");
+            //    MySprite* tensionedSpringSprite = new MySprite("data/game-tiles-untensioned-spring-clipped@2x.png");
 
-                int springX = platformCenterX - untensionedSpringSprite->size.x / 2;
-                int springY = randomY - untensionedSpringSprite->size.y;
-                Dimension springDimension(springX, springY);
+            //    int springX = platformCenterX - untensionedSpringSprite->size.x / 2;
+            //    int springY = randomY - untensionedSpringSprite->size.y;
+            //    Dimension springDimension(springX, springY);
 
-                MySprite** spriteArray = new MySprite * [2] { untensionedSpringSprite, tensionedSpringSprite };
-                Object* newSpring = new Object(spriteArray, 2, springDimension, ObjectType::JUMP_BOOST);
+            //    MySprite** spriteArray = new MySprite * [2] { untensionedSpringSprite, tensionedSpringSprite };
+            //    Object* newSpring = new Object(spriteArray, 2, springDimension, ObjectType::JUMP_BOOST);
 
-                objects.push_back(newSpring);
-            }
-            else if (rand() % 100 < 5) {
+            //    objects.push_back(newSpring);
+            //}
+            else if (rand() % 100 < 1) {
                 MySprite* jetpackSprite = new MySprite("data/game-tiles-jetpack-clipped@2x.png");
 
                 int jetpackX = platformCenterX - jetpackSprite->size.x / 2;
@@ -720,23 +820,10 @@ class MyFramework : public Framework {
         if (player->gameOver) {
             std::cout << "GAME OVER! SCORE:" << std::endl;
             std::cout << "Distance: " << player->distance << std::endl;
-            std::cout << "Platform count: " << player->platfromCount << std::endl;
+            std::cout << "Platform count: " << player->platformCount << std::endl;
 
             player->Reset();
-
-            for (auto& object : objects) {
-                delete object;
-            }
-            for (auto& enemy : enemies) {
-                delete enemy;
-            }
-            for (auto& projectile : projectiles) {
-                delete projectile;
-            }
-
-            objects.clear();
-            enemies.clear();
-            projectiles.clear();
+            CleanUp();
 
             InitPlatforms();
         }
@@ -792,7 +879,7 @@ int main(int argc, char *argv[])
     if (argc < 2)
         std::cerr << "Usage: " << argv[0] << " <windowSize>\n";
     else {
-        std::string windowSize(argv[1]);
+        std::string windowSize(argv[2]);
         size_t xPos = windowSize.find('x');
 
         if (xPos == std::string::npos) {
