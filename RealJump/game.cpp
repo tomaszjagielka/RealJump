@@ -5,6 +5,13 @@
 
 #include "Framework.h"
 
+// TODO:
+// Clean up the project.
+// Split the code into multiple files.
+// Remove redundant code.
+// Remove not related class logic to other ones.
+// Improve naming.
+
 struct Dimension {
     float x;
     float y;
@@ -24,7 +31,6 @@ struct Dimension {
         return *this;
     }
 };
-
 
 class MySprite {
     std::string spritePath;
@@ -55,7 +61,7 @@ public:
     }
 
     ~MySprite() {
-        std::cout << spritePath << " destroyed" << std::endl;
+        //std::cout << spritePath << " destroyed" << std::endl;
         destroySprite(sprite);
     }
 };
@@ -123,7 +129,6 @@ class Player : public Entity {
     bool isVulnerable = true;
     bool isFalling = false;
     int jetpackTicks = 0;
-    Entity* lastPassedPlatform = nullptr;
 
     void Jump(Object*& object) {
         switch (object->objectType) {
@@ -137,10 +142,10 @@ class Player : public Entity {
             //    velocity -= 3;
             velocity -= 6;
             break;
-        case ObjectType::JETPACK:
-            //velocity -= 55;
-            jetpackTicks = 4500;
-            break;
+        //case ObjectType::JETPACK:
+        //    //velocity -= 55;
+        //    jetpackTicks = 4500;
+        //    break;
         }
     }
 
@@ -216,6 +221,7 @@ public:
     bool lastFalling = false;
     int jumpingTicks = 0;
     int shootingTicks = 0;
+    Entity* lastPassedPlatform = nullptr;
 
     Player(MySprite** sprites, int numSprites, Dimension position)
         : Entity(sprites, numSprites, position) {}
@@ -262,8 +268,6 @@ public:
 
             velocity = -1;
             isVulnerable = false;
-
-            std::cout << "Lives left: " << lives << std::endl;
         }
 
         gameOver = lives < 0;
@@ -289,8 +293,6 @@ public:
                 position.y = lowestPlatform.y - this->sprites[0]->size.y;
 
                 lives--;
-                std::cout << "Lives left: " << lives << std::endl;
-
                 velocity = -1;
                 isVulnerable = false;
 
@@ -309,24 +311,23 @@ public:
         for (const auto& object : objects) {
             Object* obj = (Object*)object;
 
-            if (isFalling && collidesWithEntity(object)) {
-                velocity = 0;
-                position.y -= 0.25;
-
-                if (obj->objectType == ObjectType::JETPACK) {
-                    // TODO:
+            if (collidesWithEntity(object)) {
+                if (obj->objectType == ObjectType::JETPACK && !jetpackTicks) {
+                    jetpackTicks = 4500;
+                     // TODO:
                     // Delete the Jetpack object properly? Is it not a proper way?
                     obj->position.y = windowSize.y + 1;
                     isVulnerable = false;
+                }
+                else if (isFalling && object->position.y > position.y + sprites[0]->size.y - object->sprites[0]->size.y) {
+                    velocity = 0;
+                    Jump(obj);
+                    jumpingTicks = 150;
                 }
                 //else if (obj->objectType == ObjectType::JUMP_BOOST && obj->drawnSpriteIndex == 0) {
                 //    obj->position.y += obj->sprites[0]->size.y - obj->sprites[1]->size.y;
                 //    obj->drawnSpriteIndex = 1;
                 //}
-
-                Jump(obj);
-
-                jumpingTicks = 150;
 
                 break;
             }
@@ -431,20 +432,9 @@ public:
         this->isVulnerable = true;
         this->jumpingTicks = 0;
         this->shootingTicks = 0;
+        this->lastPassedPlatform = nullptr;
     }
 };
-
-//class Enemy : public Entity {
-//    Direction lastUsedDirection = Direction::RIGHT;
-//
-//public:
-//    Enemy(MySprite** sprites, int numSprites, Dimension position)
-//        : Entity(sprites, numSprites, position) {}
-//
-//    void Update() {
-//        Draw(sprites[0]);
-//    }
-//};
 
 class Projectile : public Entity {
     Direction lastUsedDirection = Direction::RIGHT;
@@ -487,7 +477,7 @@ public:
         position.y += direction.y * speed;
 
         // Check if projectile has gone off the screen.
-        if (position.x < 0) {
+        if (position.x + sprites[0]->size.x < 0) {
             position.x = windowSize.x;
         }
         else if (position.x > windowSize.x) {
@@ -504,6 +494,9 @@ public:
                 Entity* ent = (Entity*)*it;
                 // TODO:
                 // Delete these objects properly? Is it not a proper way?
+
+                // 100 for some reason fixes crash.
+                // Maybe it has to do with projectil end enemy overlapping?
                 ent->position.y = windowSize.y + 100;
                 //it = enemies.erase(it);
                 this->position.y = windowSize.y + 1;
@@ -517,18 +510,6 @@ public:
     }
 };
 
-//enum HudType {
-//    LIVES
-//};
-//class HudElement : public Entity {
-//    HudType hudType;
-//
-//
-//    HudElement(MySprite** sprites, int numSprites, Dimension position, HudType hudType) :
-//        Entity(sprites, numSprites, position, hudType) {}
-//};
-
-
 class MyFramework : public Framework {
     Dimension windowSize;
     MySprite* backgroundSprite;
@@ -538,8 +519,8 @@ class MyFramework : public Framework {
     std::list<Entity*> objects;
     std::list<Entity*> enemies;
     std::list<Projectile*> projectiles;
-    std::list<Entity*> hudElements;
     Dimension mousePosition;
+    Dimension backgroundPosition;
 
     void PreInit(int& width, int& height, bool& fullscreen) override
     {
@@ -598,13 +579,7 @@ class MyFramework : public Framework {
             {'7', new MySprite("data/char-set/7.png")},
             {'8', new MySprite("data/char-set/8.png")},
             {'9', new MySprite("data/char-set/9.png")},
-            {'s', new MySprite("data/char-set/s.png")},
-            {'c', new MySprite("data/char-set/c.png")},
-            {'o', new MySprite("data/char-set/o.png")},
-            {'r', new MySprite("data/char-set/r.png")},
-            {'e', new MySprite("data/char-set/e.png")},
         };
-        std::cout << "Lives left: " << player->lives << std::endl;
 
         InitPlatforms();
 
@@ -621,14 +596,10 @@ class MyFramework : public Framework {
         for (auto& projectile : projectiles) {
             delete projectile;
         }
-        for (auto& hudElement : hudElements) {
-            delete hudElement;
-        }
 
         objects.clear();
         enemies.clear();
         projectiles.clear();
-        hudElements.clear();
     }
 
     void Close() {
@@ -641,9 +612,23 @@ class MyFramework : public Framework {
 
     // return value: if true will exit the application
     bool Tick() {
-        for (int height = 0; height < windowSize.y; height += backgroundSprite->size.y) {
-            for (int width = 0; width < windowSize.x; width += backgroundSprite->size.x) {
-                backgroundSprite->Draw(width, height);
+        if (player->velocity < 0 && player->maxHeightCapped) {
+            backgroundPosition.y -= player->velocity;
+        }
+
+        // Scroll & draw the background multiple times based on player position.
+        int backgroundHeight = backgroundSprite->size.y;
+        int backgroundWidth = backgroundSprite->size.x;
+        int startY = (int)(backgroundPosition.y) % backgroundHeight;
+
+        for (int y = startY; y < windowSize.y; y += backgroundHeight) {
+            for (int x = 0; x < windowSize.x; x += backgroundWidth) {
+                backgroundSprite->Draw(x, y);
+            }
+        }
+        for (int y = startY - backgroundHeight; y >= -backgroundHeight; y -= backgroundHeight) {
+            for (int x = 0; x < windowSize.x; x += backgroundWidth) {
+                backgroundSprite->Draw(x, y);
             }
         }
 
@@ -660,6 +645,8 @@ class MyFramework : public Framework {
             }
 
             if (object->position.y > windowSize.y) {
+                if (player->lastPassedPlatform == object)
+                    player->lastPassedPlatform = nullptr;
                 delete object;
                 it = objects.erase(it);
             }
@@ -693,7 +680,7 @@ class MyFramework : public Framework {
                 projectile->position.y -= player->velocity;
             }
 
-            if (projectile->position.y > windowSize.y || projectile->position.y < 0) {
+            if (projectile->position.y > windowSize.y || projectile->position.y + projectile->sprites[0]->size.y < 0) {
                 delete projectile;
                 it = projectiles.erase(it);
             }
@@ -725,7 +712,7 @@ class MyFramework : public Framework {
         int playerDistance = player->distance;
         int platformCount = player->platformCount;
 
-        // Draw player distance
+        // Draw player distance.
         int numDigits = 1;
         int digitPosition = 0;
         while (playerDistance >= numDigits * 10) {
@@ -738,7 +725,7 @@ class MyFramework : public Framework {
             numDigits /= 10;
         }
 
-        // Draw platform count
+        // Draw platform count.
         numDigits = 1;
         digitPosition = 0;
         while (platformCount >= numDigits * 10) {
@@ -756,12 +743,10 @@ class MyFramework : public Framework {
             int minX = 0;
             int randomX = rand() % (maxX - minX + 1) + minX;
 
-            int maxY = -300;
-            int minY = -300;
+            int maxY = 0;
+            int minY = -325;
             int randomY = rand() % (maxY - minY + 1) + minY;
 
-            randomY = std::max(randomY, -450);
-            randomX = std::min(randomX, int(windowSize.x));
             Dimension randomDimension(randomX, randomY);
 
             if (rand() % 100 < 15)
@@ -818,13 +803,8 @@ class MyFramework : public Framework {
         }
 
         if (player->gameOver) {
-            std::cout << "GAME OVER! SCORE:" << std::endl;
-            std::cout << "Distance: " << player->distance << std::endl;
-            std::cout << "Platform count: " << player->platformCount << std::endl;
-
             player->Reset();
             CleanUp();
-
             InitPlatforms();
         }
 
