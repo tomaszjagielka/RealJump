@@ -26,6 +26,8 @@ struct Dimension {
 
 
 class MySprite {
+    std::string spritePath;
+
 public:
     Sprite* sprite;
     Dimension size;
@@ -35,16 +37,25 @@ public:
         int w, h;
         getSpriteSize(sprite, w, h);
         size = Dimension(w, h);
+        spritePath = path;
     }
+
+    // Used for object copying.
+    //MySprite(const MySprite& other) {
+    //    spritePath = other.spritePath;
+    //    sprite = createSprite(other.spritePath);
+    //    int w, h;
+    //    getSpriteSize(sprite, w, h);
+    //    size = Dimension(w, h);
+    //}
 
     void Draw(int x, int y) {
         drawSprite(sprite, x, y);
     }
 
     ~MySprite() {
-        if (sprite) {
-            destroySprite(sprite);
-        }
+        std::cout << spritePath << " destroyed" << std::endl;
+        destroySprite(sprite);
     }
 };
 
@@ -56,22 +67,24 @@ enum class Direction {
 
 class Entity {
 protected:
-    int numSprites;
-
     void Draw(MySprite* sprite) {
-        sprite->Draw(position.x, position.y);
+        if (sprite)
+            sprite->Draw(position.x, position.y);
     }
 
 public:
     MySprite** sprites;
+    int numSprites;
     Dimension position;
+    int drawnSpriteIndex = 0;
 
     Entity(MySprite** sprites, int numSprites, Dimension position)
         : sprites(sprites), numSprites(numSprites), position(position) {}
 
     ~Entity() {
         for (int i = 0; i < numSprites; i++) {
-            delete sprites[i];
+            if (sprites[i])
+                delete sprites[i];
         }
         delete[] sprites;
     }
@@ -92,9 +105,9 @@ public:
     Object(MySprite** sprites, int numSprites, Dimension position, ObjectType objectType)
         : Entity(sprites, numSprites, position), objectType(objectType) {}
 
-    //void Update(Dimension windowSize, std::list<Entity*> objects) {
-
-    //}
+    void Update() {
+        Draw(sprites[drawnSpriteIndex]);
+    }
 };
 
 enum Collision {
@@ -114,7 +127,7 @@ class Player : public Entity {
             velocity -= 3;
 			break;
         case ObjectType::JUMP_BOOST:
-            if (object->sprites[0] == object->sprites[1])
+            if (object->drawnSpriteIndex == 0)
                 velocity -= 3;
             else
                 velocity -= 6;
@@ -304,20 +317,21 @@ public:
                         onPlatform = true;
                     }
 
+
                     Object* obj = (Object*)object;
-                    Jump(obj);
 
                     if (obj->objectType == ObjectType::JETPACK) {
-                        obj->sprites[0] = new MySprite("data/transparent.png");
                         // TODO:
                         // Delete the Jetpack object properly? Is it not a proper way?
-                        obj->position = Dimension(0, windowSize.y + 1);
+                        obj->position.y = windowSize.y + 1;
                         isVulnerable = false;
                     }
-                    else if (obj->objectType == ObjectType::JUMP_BOOST) {
+                    else if (obj->objectType == ObjectType::JUMP_BOOST && obj->drawnSpriteIndex == 0) {
                         obj->position.y += obj->sprites[0]->size.y - obj->sprites[1]->size.y;
-                        obj->sprites[0] = obj->sprites[1];
+                        obj->drawnSpriteIndex = 1;
                     }
+
+                    Jump(obj);
 
                     jumpingTicks = 150;
                     collidedWithObject = true;
@@ -491,11 +505,12 @@ public:
             Collision collision = collidesWithObject(*it);
 
             if (collision == Collision::OTHER) {
-                it = enemies.erase(it);
+                Entity* ent = (Entity*)*it;
                 // TODO:
-                // Delete the Projectile object properly.
-                speed = 0;
-                sprites[0] = new MySprite("data/transparent.png");
+                // Delete these objects properly? Is it not a proper way?
+                ent->position.y = windowSize.y + 100;
+                //it = enemies.erase(it);
+                this->position.y = windowSize.y + 1;
             }
             else {
                 ++it;
@@ -583,7 +598,7 @@ class MyFramework : public Framework {
 
         bool objectExists = false;
         for (auto it = objects.begin(); it != objects.end(); ) {
-            Entity* object = *it;
+            Object* object = (Object*)*it;
 
             if (object->position.y < 0) {
                 objectExists = true;
@@ -598,7 +613,7 @@ class MyFramework : public Framework {
                 it = objects.erase(it);
             }
             else {
-                object->sprites[0]->Draw(object->position.x, object->position.y);
+                object->Update();
                 ++it;
             }
         }
@@ -654,14 +669,51 @@ class MyFramework : public Framework {
 
             objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
 
+            int platformWidth = objects.back()->sprites[0]->size.x;
+            int platformCenterX = randomX + platformWidth / 2;
+
             if (rand() % 100 < 15) {
-                enemies.push_back(new Enemy(new MySprite * [1] {new MySprite("data/enemy0-clipped@2x.png")}, 1, Dimension(randomDimension.x - 30, randomDimension.y - 60)));
+                const int numOfEnemies = 12;
+                std::string enemySpriteFilenames[numOfEnemies];
+
+                for (int i = 0; i < numOfEnemies; i++) {
+                    enemySpriteFilenames[i] = ("data/game-tiles-enemy" + std::to_string(i) + "-clipped@2x.png");
+                }
+
+                const char* enemySpriteFilename = enemySpriteFilenames[rand() % numOfEnemies].c_str();
+                MySprite* enemySprite = new MySprite(enemySpriteFilename);
+
+                int enemyX = platformCenterX - enemySprite->size.x / 2;
+                int enemyY = randomY - enemySprite->size.y;
+                Dimension enemyDimension(enemyX, enemyY);
+
+                MySprite** spriteArray = new MySprite * [1] { enemySprite };
+                Enemy* newEnemy = new Enemy(spriteArray, 1, enemyDimension);
+
+                enemies.push_back(newEnemy);
             }
             else if (rand() % 100 < 10) {
-                objects.push_back(new Object(new MySprite * [2] {new MySprite("data/game-tiles-untensioned-spring-clipped@2x.png"), new MySprite("data/game-tiles-tensioned-spring-clipped@2x.png")}, 1, Dimension(randomDimension.x + 40, randomDimension.y - 50), ObjectType::JUMP_BOOST));
+                MySprite* untensionedSpringSprite = new MySprite("data/game-tiles-untensioned-spring-clipped@2x.png");
+                MySprite* tensionedSpringSprite = new MySprite("data/game-tiles-tensioned-spring-clipped@2x.png");
+
+                int springX = platformCenterX - untensionedSpringSprite->size.x / 2;
+                int springY = randomY - untensionedSpringSprite->size.y;
+                Dimension springDimension(springX, springY);
+
+                MySprite** spriteArray = new MySprite * [2] { untensionedSpringSprite, tensionedSpringSprite };
+                Object* newSpring = new Object(spriteArray, 2, springDimension, ObjectType::JUMP_BOOST);
+
+                objects.push_back(newSpring);
             }
-            else if (rand() % 100 < 1) {
-                objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-jetpack-clipped@2x.png")}, 1, Dimension(randomDimension.x + 35, randomDimension.y - 70), ObjectType::JETPACK));
+            else if (rand() % 100 < 5) {
+                MySprite* jetpackSprite = new MySprite("data/game-tiles-jetpack-clipped@2x.png");
+
+                int jetpackX = platformCenterX - jetpackSprite->size.x / 2;
+                int jetpackY = randomY - jetpackSprite->size.y;
+                Dimension jetpackDimension(jetpackX, jetpackY);
+
+                MySprite** spriteArray = new MySprite * [1] { jetpackSprite };
+                objects.push_back(new Object(spriteArray, 1, jetpackDimension, ObjectType::JETPACK));
             }
         }
 
