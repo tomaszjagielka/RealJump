@@ -81,8 +81,8 @@ public:
 
 enum ObjectType {
     DEFAULT,
-    PLATFORM_NORMAL,
-    PLATFORM_BOOST,
+    JUMP,
+    JUMP_BOOST,
     JETPACK
 };
 
@@ -110,28 +110,38 @@ class Player : public Entity {
 
     void Jump(Object*& object) {
         switch (object->objectType) {
-        case ObjectType::PLATFORM_NORMAL:
+        case ObjectType::JUMP:
             velocity -= 3;
 			break;
-        case ObjectType::PLATFORM_BOOST:
-            velocity -= 6;
+        case ObjectType::JUMP_BOOST:
+            if (object->sprites[0] == object->sprites[1])
+                velocity -= 3;
+            else
+                velocity -= 6;
             break;
         case ObjectType::JETPACK:
             velocity -= 55;
-            isVulnerable = false;
             break;
         }
 
         // TODO:
         // Check if it takes effect.
-        isFalling = false;
+        //isFalling = false;
     }
 
-    bool collidesWithPlatform(const Entity* platform) {
-        if (position.y + sprites[0]->size.y > platform->position.y && // Player's feet are below the top of the platform.
-            position.y < platform->position.y && // Player's head is above the platform.
-            position.x + sprites[0]->size.x > platform->position.x && // Player is to the right of the platform.
-            position.x < platform->position.x + platform->sprites[0]->size.x) // Player is to the left of the platform.
+    void Jump() {
+        velocity -= 3;
+
+        // TODO:
+        // Check if it takes effect.
+        //isFalling = false;
+    }
+
+    bool collidesWithEntity(const Entity* entity) {
+        if (position.y + sprites[0]->size.y > entity->position.y && // Player's feet are below the top of the entity.
+            position.y < entity->position.y && // Player's head is above the entity.
+            position.x + sprites[0]->size.x > entity->position.x && // Player is to the right of the entity.
+            position.x < entity->position.x + entity->sprites[0]->size.x) // Player is to the left of the entity.
         {
             return true;
         }
@@ -207,6 +217,8 @@ public:
         velocity += gravity;
         position.y += velocity;
 
+        isFalling = velocity > 0;
+
         if (position.y < windowSize.y / 2 - this->sprites[0]->size.y / 2) {
             position.y = windowSize.y / 2 - this->sprites[0]->size.y / 2;
             maxHeightCapped = true;
@@ -230,13 +242,14 @@ public:
             std::cout << "Lives left: " << lives << std::endl;
         }
 
-        gameOver = (lives < 1);
-
-        isFalling = lastYPosition < position.y;
+        gameOver = lives < 1;
 
         int yPositionDelta = position.y - lastYPosition;
         if (yPositionDelta > 0)
             distance += yPositionDelta;
+
+        if (isFalling)
+            isVulnerable = true;
 
         // COLLISIONS
         bool collidedWithEnemy = false;
@@ -269,6 +282,7 @@ public:
                 else if (collision == Collision::TOP) {
                     // Remove enemy
                     it = enemies.erase(it);
+                    Jump();
                 }
                 else {
                     ++it;
@@ -276,12 +290,10 @@ public:
             }
         }
 
-        bool collidedWithPlatform = false;
+        bool collidedWithObject = false;
         if (isFalling) {
-            isVulnerable = true;
-
             for (const auto& object : objects) {
-                if (collidesWithPlatform(object)) {
+                if (collidesWithEntity(object)) {
                     velocity = 0;
                     position.y -= 0.25;
 
@@ -290,22 +302,30 @@ public:
                         onPlatform = true;
                     }
 
-                    collidedWithPlatform = true;
-
                     Object* obj = (Object*)object;
                     Jump(obj);
 
-                    // TODO:
-                    // Delete the Jetpack object properly.
-                    if (obj->objectType == ObjectType::JETPACK)
+                    if (obj->objectType == ObjectType::JETPACK) {
                         obj->sprites[0] = new MySprite("data/transparent.png");
+                        // TODO:
+                        // Delete the Jetpack object properly? Is it not a proper way?
+                        obj->position = Dimension(0, windowSize.y + 1);
+                        isVulnerable = false;
+                    }
+                    else if (obj->objectType == ObjectType::JUMP_BOOST) {
+                        obj->position.y += obj->sprites[0]->size.y - obj->sprites[1]->size.y;
+                        obj->sprites[0] = obj->sprites[1];
+                    }
 
                     jumpingTicks = 150;
+                    collidedWithObject = true;
+
+                    break;
                 }
             }
         }
 
-        if (!collidedWithPlatform && !collidedWithEnemy) {
+        if (!collidedWithObject && !collidedWithEnemy) {
             onPlatform = false;
         }
 
@@ -501,8 +521,8 @@ class MyFramework : public Framework {
     }
 
     void InitPlatforms() {
-        objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")},1, Dimension(player->position.x - player->sprites[0]->size.x / 4, player->position.y + player->sprites[0]->size.y), ObjectType::PLATFORM_NORMAL));
-        int platformCount = 10;
+        objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, Dimension(player->position.x - player->sprites[0]->size.x / 4, player->position.y + player->sprites[0]->size.y), ObjectType::JUMP));
+        int platformCount = 5;
 
         for (int i = 0; i < platformCount; i++) {
             int maxX = windowSize.x - objects.front()->sprites[0]->size.x;
@@ -518,7 +538,7 @@ class MyFramework : public Framework {
 
             Dimension randomDimension(randomX, randomY);
             objects.push_back(
-                new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::PLATFORM_NORMAL));
+                new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
         }
     }
 
@@ -630,15 +650,13 @@ class MyFramework : public Framework {
             randomX = std::min(randomX, int(windowSize.x));
             Dimension randomDimension(randomX, randomY);
 
-            if (rand() % 100 < 90) {
-                objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::PLATFORM_NORMAL));
-            }
-            else {
-                objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-blue-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::PLATFORM_BOOST));
-            }
+            objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
 
-            if (rand() % 100 < 10) {
+            if (rand() % 100 < 15) {
                 enemies.push_back(new Enemy(new MySprite * [1] {new MySprite("data/enemy0-clipped@2x.png")}, 1, Dimension(randomDimension.x - 30, randomDimension.y - 60)));
+            }
+            else if (rand() % 100 < 10) {
+                objects.push_back(new Object(new MySprite * [2] {new MySprite("data/game-tiles-untensioned-spring-clipped@2x.png"), new MySprite("data/game-tiles-tensioned-spring-clipped@2x.png")}, 1, Dimension(randomDimension.x + 40, randomDimension.y - 50), ObjectType::JUMP_BOOST));
             }
             else if (rand() % 100 < 1) {
                 objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-jetpack-clipped@2x.png")}, 1, Dimension(randomDimension.x + 35, randomDimension.y - 70), ObjectType::JETPACK));
