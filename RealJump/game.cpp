@@ -219,6 +219,9 @@ public:
 
         isFalling = velocity > 0;
 
+        if (isFalling)
+            isVulnerable = true;
+
         if (position.y < windowSize.y / 2 - this->sprites[0]->size.y / 2) {
             position.y = windowSize.y / 2 - this->sprites[0]->size.y / 2;
             maxHeightCapped = true;
@@ -239,6 +242,9 @@ public:
             position.y = lowestPlatform.y - this->sprites[0]->size.y;
             lives--;
 
+            velocity = -1;
+            isVulnerable = false;
+
             std::cout << "Lives left: " << lives << std::endl;
         }
 
@@ -248,45 +254,41 @@ public:
         if (yPositionDelta > 0)
             distance += yPositionDelta;
 
-        if (isFalling)
-            isVulnerable = true;
-
         // COLLISIONS
         bool collidedWithEnemy = false;
-        if (isVulnerable) {
-            auto it = enemies.begin();
+        auto it = enemies.begin();
 
-            while (it != enemies.end()) {
-                Collision collision = collidesWithObject(*it);
+        while (it != enemies.end()) {
+            Collision collision = collidesWithObject(*it);
 
-                if (collision == Collision::OTHER) {
-                    collidedWithEnemy = true;
-                    Dimension lowestPlatform = Dimension(0, 0);
+            if (isVulnerable && collision == Collision::OTHER) {
+                collidedWithEnemy = true;
+                Dimension lowestPlatform = Dimension(0, 0);
 
-                    for (Entity* object : objects) {
-                        if (object->position.y > lowestPlatform.y) {
-                            lowestPlatform = object->position;
-                        }
+                for (Entity* object : objects) {
+                    if (object->position.y > lowestPlatform.y) {
+                        lowestPlatform = object->position;
                     }
-
-                    position.x = lowestPlatform.x + this->sprites[0]->size.x / 4;
-                    position.y = lowestPlatform.y - this->sprites[0]->size.y - 200;
-
-                    lives--;
-                    std::cout << "Lives left: " << lives << std::endl;
-
-                    velocity = 0;
-
-                    break;
                 }
-                else if (collision == Collision::TOP) {
-                    // Remove enemy
-                    it = enemies.erase(it);
-                    Jump();
-                }
-                else {
-                    ++it;
-                }
+
+                position.x = lowestPlatform.x + this->sprites[0]->size.x / 4;
+                position.y = lowestPlatform.y - this->sprites[0]->size.y;
+
+                lives--;
+                std::cout << "Lives left: " << lives << std::endl;
+
+                velocity = -1;
+                isVulnerable = false;
+
+                break;
+            }
+            else if (collision == Collision::TOP) {
+                // Remove enemy
+                it = enemies.erase(it);
+                Jump();
+            }
+            else {
+                ++it;
             }
         }
 
@@ -533,7 +535,7 @@ class MyFramework : public Framework {
             int minY = 0;
             int randomY = rand() % (maxY - minY + 1) + minY;
 
-            randomY = 100 * i + randomY;
+            randomY = 200 * i + randomY;
             randomX = std::min(randomX, int(windowSize.x));
 
             Dimension randomDimension(randomX, randomY);
