@@ -61,7 +61,7 @@ public:
     }
 
     ~MySprite() {
-        //std::cout << spritePath << " destroyed" << std::endl;
+        std::cout << spritePath << " destroyed" << std::endl;
         destroySprite(sprite);
     }
 };
@@ -75,8 +75,7 @@ enum class Direction {
 class Entity {
 protected:
     void Draw(MySprite* sprite) {
-        if (sprite)
-            sprite->Draw(position.x, position.y);
+        sprite->Draw(position.x, position.y);
     }
 
 public:
@@ -89,10 +88,10 @@ public:
         : sprites(sprites), numSprites(numSprites), position(position) {}
 
     ~Entity() {
-        for (int i = 0; i < numSprites; i++) {
-            if (sprites[i])
-                delete sprites[i];
-        }
+        //for (int i = 0; i < numSprites; i++) {
+        //    if (sprites[i])
+        //        delete sprites[i];
+        //}
         delete[] sprites;
     }
 
@@ -299,7 +298,6 @@ public:
                 break;
             }
             else if (collision == Collision::TOP) {
-                // Remove enemy
                 it = enemies.erase(it);
                 Jump();
             }
@@ -514,6 +512,11 @@ class MyFramework : public Framework {
     Dimension windowSize;
     MySprite* backgroundSprite;
     MySprite* liveSprite;
+    MySprite* greenPlatformSprite;
+    MySprite* bluePlatformSprite;
+    MySprite* projectileSprite;
+    MySprite* jetpackSprite;
+    MySprite* enemySprites[12];
     Player* player;
     std::unordered_map<char, MySprite*> charMap;
     std::list<Entity*> objects;
@@ -530,7 +533,7 @@ class MyFramework : public Framework {
     }
 
     void InitPlatforms() {
-        objects.push_back(new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, Dimension(player->position.x - player->sprites[0]->size.x / 4, player->position.y + player->sprites[0]->size.y), ObjectType::JUMP));
+        objects.push_back(new Object(new MySprite * [1] {greenPlatformSprite}, 1, Dimension(player->position.x - player->sprites[0]->size.x / 4, player->position.y + player->sprites[0]->size.y), ObjectType::JUMP));
         int platformCount = 5;
 
         for (int i = 0; i < platformCount; i++) {
@@ -547,7 +550,7 @@ class MyFramework : public Framework {
 
             Dimension randomDimension(randomX, randomY);
             objects.push_back(
-                new Object(new MySprite * [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
+                new Object(new MySprite * [1] {greenPlatformSprite}, 1, randomDimension, ObjectType::JUMP));
         }
     }
 
@@ -580,6 +583,13 @@ class MyFramework : public Framework {
             {'8', new MySprite("data/char-set/8.png")},
             {'9', new MySprite("data/char-set/9.png")},
         };
+        greenPlatformSprite = new MySprite("data/game-tiles-green-platform-clipped@2x.png");
+        bluePlatformSprite = new MySprite("data/game-tiles-blue-platform-clipped@2x.png");
+        projectileSprite = new MySprite("data/projectile-tiles0-clipped@2x.png");
+        jetpackSprite = new MySprite("data/game-tiles-jetpack-clipped@2x.png");
+        for (int i = 0; i < sizeof(enemySprites) / sizeof(enemySprites[0]); i++) {
+            enemySprites[i] = new MySprite(("data/game-tiles-enemy" + std::to_string(i) + "-clipped@2x.png").c_str());
+        }
 
         InitPlatforms();
 
@@ -603,11 +613,19 @@ class MyFramework : public Framework {
     }
 
     void Close() {
+        CleanUp();
+
         delete backgroundSprite;
         delete liveSprite;
         delete player;
-
-        CleanUp();
+        delete greenPlatformSprite;
+        delete bluePlatformSprite;
+        delete projectileSprite;
+        delete jetpackSprite;
+        for (auto& enemySprite : enemySprites)
+            delete enemySprite;
+        for (auto& character : charMap)
+            delete character.second;
     }
 
     // return value: if true will exit the application
@@ -696,19 +714,6 @@ class MyFramework : public Framework {
             liveSprite->Draw(windowSize.x - 60 * i, 0);
         }
 
-        //int distanceDigitCount = 0;
-        //int playerDistance = player->distance;
-        //while (playerDistance != 0) {
-        //    playerDistance /= 10;
-        //    distanceDigitCount++;
-        //}
-
-        //for (int i = 1, charPosCount = 0; i <= player->distance; i *= 10, charPosCount++) {
-        //    char digit = (player->distance / i) / i;
-        //    std::cout << digit << std::endl;
-        //    //charMap[digit]->Draw(charPosCount * 32 + 4, 0);
-        //}
-
         int playerDistance = player->distance;
         int platformCount = player->platformCount;
 
@@ -739,7 +744,7 @@ class MyFramework : public Framework {
         }
 
         if (!objectExists) {
-            int maxX = windowSize.x - objects.front()->sprites[0]->size.x;
+            int maxX = windowSize.x - greenPlatformSprite->size.x;
             int minX = 0;
             int randomX = rand() % (maxX - minX + 1) + minX;
 
@@ -750,29 +755,22 @@ class MyFramework : public Framework {
             Dimension randomDimension(randomX, randomY);
 
             if (rand() % 100 < 15)
-                objects.push_back(new Object(new MySprite* [1] {new MySprite("data/game-tiles-blue-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP_BOOST));
+                objects.push_back(new Object(new MySprite* [1] {bluePlatformSprite}, 1, randomDimension, ObjectType::JUMP_BOOST));
             else
-                objects.push_back(new Object(new MySprite* [1] {new MySprite("data/game-tiles-green-platform-clipped@2x.png")}, 1, randomDimension, ObjectType::JUMP));
+                objects.push_back(new Object(new MySprite* [1] {greenPlatformSprite}, 1, randomDimension, ObjectType::JUMP));
 
             int platformWidth = objects.back()->sprites[0]->size.x;
             int platformCenterX = randomX + platformWidth / 2;
 
             if (rand() % 100 < 15) {
-                const int numOfEnemies = 12;
-                std::string enemySpriteFilenames[numOfEnemies];
+                int enemySpritesSize = sizeof(enemySprites) / sizeof(enemySprites[0]);
+                MySprite* randomEnemySprite = enemySprites[std::rand() % enemySpritesSize];
 
-                for (int i = 0; i < numOfEnemies; i++) {
-                    enemySpriteFilenames[i] = ("data/game-tiles-enemy" + std::to_string(i) + "-clipped@2x.png");
-                }
-
-                const char* enemySpriteFilename = enemySpriteFilenames[rand() % numOfEnemies].c_str();
-                MySprite* enemySprite = new MySprite(enemySpriteFilename);
-
-                int enemyX = platformCenterX - enemySprite->size.x / 2;
-                int enemyY = randomY - enemySprite->size.y;
+                int enemyX = platformCenterX - randomEnemySprite->size.x / 2;
+                int enemyY = randomY - randomEnemySprite->size.y;
                 Dimension enemyDimension(enemyX, enemyY);
 
-                MySprite** spriteArray = new MySprite * [1] { enemySprite };
+                MySprite** spriteArray = new MySprite * [1] { randomEnemySprite };
                 Entity* newEnemy = new Entity(spriteArray, 1, enemyDimension);
 
                 enemies.push_back(newEnemy);
@@ -791,13 +789,11 @@ class MyFramework : public Framework {
             //    objects.push_back(newSpring);
             //}
             else if (rand() % 100 < 1) {
-                MySprite* jetpackSprite = new MySprite("data/game-tiles-jetpack-clipped@2x.png");
-
                 int jetpackX = platformCenterX - jetpackSprite->size.x / 2;
                 int jetpackY = randomY - jetpackSprite->size.y;
                 Dimension jetpackDimension(jetpackX, jetpackY);
 
-                MySprite** spriteArray = new MySprite * [1] { jetpackSprite };
+                MySprite** spriteArray = new MySprite * [1] {jetpackSprite};
                 objects.push_back(new Object(spriteArray, 1, jetpackDimension, ObjectType::JETPACK));
             }
         }
@@ -819,7 +815,7 @@ class MyFramework : public Framework {
 
     void onMouseButtonClick(FRMouseButton button, bool isReleased) {
         if (!isReleased) {
-            projectiles.push_back(new Projectile(new MySprite * [1] {new MySprite("data/projectile-tiles0-clipped@2x.png")},
+            projectiles.push_back(new Projectile(new MySprite * [1] {projectileSprite},
                 1,
                 Dimension(player->position.x + player->sprites[0]->size.x / 4, player->position.y),
                 mousePosition));
