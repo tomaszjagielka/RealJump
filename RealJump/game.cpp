@@ -33,7 +33,9 @@ struct Dimension {
 };
 
 class MySprite {
+#ifdef _DEBUG
     std::string spritePath;
+#endif
 
 public:
     Sprite* sprite;
@@ -44,7 +46,9 @@ public:
         int w, h;
         getSpriteSize(sprite, w, h);
         size = Dimension(w, h);
+#ifdef _DEBUG
         spritePath = path;
+#endif
     }
 
     // Used for object copying.
@@ -61,7 +65,9 @@ public:
     }
 
     ~MySprite() {
+#ifdef _DEBUG
         std::cout << spritePath << " destroyed" << std::endl;
+#endif
         destroySprite(sprite);
     }
 };
